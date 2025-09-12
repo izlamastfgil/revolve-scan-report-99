@@ -54,6 +54,10 @@ const ScanExecution = ({ onBack, onComplete, deviceInfo }: ScanExecutionProps) =
   const [isPaused, setIsPaused] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [showWarning, setShowWarning] = useState(false);
+  const [currentDialog, setCurrentDialog] = useState<string | null>(null);
+  const [dialogProgress, setDialogProgress] = useState(0);
+  const [dialogOutput, setDialogOutput] = useState<string>("");
+  const [isDialogComplete, setIsDialogComplete] = useState(false);
 
   const [scanSteps, setScanSteps] = useState<ScanStep[]>([
     {
@@ -98,68 +102,132 @@ const ScanExecution = ({ onBack, onComplete, deviceInfo }: ScanExecutionProps) =
     }
   ]);
 
+  const dialogMessages = {
+    "os-detection": {
+      processing: "Cross-platform identification in progress... (Windows/Linux/Android device analysis)",
+      output: "✅ Device analysis complete"
+    },
+    "nist-wipe": {
+      processing: "Implementing NIST SP 800-88 Clear/Purge/Cryptographic Erase methods with verification...",
+      output: "✅ Data successfully wiped"
+    },
+    "certificate": {
+      processing: "Creating tamper-proof certificate with unique ID, hash & timestamps...",
+      output: "✅ Certificate generated"
+    },
+    "diagnostics": {
+      processing: "Running component health analysis and refurbish/recycle decision matrix...",
+      output: "✅ Diagnostics complete"
+    },
+    "compliance": {
+      processing: "Generating EPR records, audit trail, and device journey timeline...",
+      output: "✅ Compliance dashboard ready"
+    }
+  };
+
   const overallProgress = scanSteps.reduce((acc, step) => acc + step.progress, 0) / scanSteps.length;
 
+  // Dialog progress simulation
   useEffect(() => {
-    if (isScanning && !isPaused) {
+    if (currentDialog && !isDialogComplete) {
       const interval = setInterval(() => {
-        setScanSteps(prev => {
-          const updated = [...prev];
-          const current = updated[currentStep];
-          
-          if (current && current.status !== "completed") {
-            if (current.status === "pending") {
-              current.status = "running";
-            }
-            
-            current.progress = Math.min(100, current.progress + Math.random() * 15 + 5);
-            
-            if (current.progress >= 100) {
-              current.status = "completed";
-              current.progress = 100;
-              
-              if (currentStep < updated.length - 1) {
-                setCurrentStep(currentStep + 1);
-              } else {
-                // Scan completed
-                setIsScanning(false);
-                setTimeout(() => {
-                  const mockResults: ScanResults = {
-                    overallScore: 87,
-                    grade: "Good",
-                    components: [
-                      { component: "CPU Performance", score: 92, status: "pass", details: "Intel i7-10750H - Optimal performance metrics" },
-                      { component: "Memory Integrity", score: 88, status: "pass", details: "16GB DDR4 - All memory banks operational" },
-                      { component: "Storage Health", score: 85, status: "pass", details: "512GB NVMe - 15% wear level, good retention" },
-                      { component: "Battery Cycle", score: 76, status: "warning", details: "847 cycles completed, 74% capacity remaining" },
-                      { component: "Display Quality", score: 94, status: "pass", details: "15.6\" FHD - No defects, optimal brightness" },
-                      { component: "Thermal Management", score: 89, status: "pass", details: "Cooling system operational, no throttling" },
-                      { component: "Data Sanitization", score: 100, status: "pass", details: "NIST SP 800-88 Purge method - Verified complete" }
-                    ],
-                    recommendation: "Refurbish",
-                    certificateId: "RVL-MFECLNW2"
-                  };
-                  onComplete(mockResults);
-                }, 2000);
-              }
-            }
+        setDialogProgress(prev => {
+          const newProgress = Math.min(100, prev + Math.random() * 15 + 5);
+          if (newProgress >= 100) {
+            setIsDialogComplete(true);
+            const stepId = currentDialog;
+            const message = dialogMessages[stepId as keyof typeof dialogMessages];
+            setDialogOutput(message.output);
           }
-          
-          return updated;
+          return newProgress;
         });
-      }, 800);
+      }, 300);
 
       return () => clearInterval(interval);
     }
-  }, [isScanning, isPaused, currentStep, onComplete]);
+  }, [currentDialog, isDialogComplete, dialogMessages]);
+
+  // Auto-advance to next dialog after completion
+  useEffect(() => {
+    if (isDialogComplete && currentDialog) {
+      const currentIndex = scanSteps.findIndex(step => step.id === currentDialog);
+      setScanSteps(prev => {
+        const updated = [...prev];
+        updated[currentIndex].status = "completed";
+        updated[currentIndex].progress = 100;
+        return updated;
+      });
+
+      const timeout = setTimeout(() => {
+        if (currentIndex < scanSteps.length - 1) {
+          // Move to next step
+          const nextStep = scanSteps[currentIndex + 1];
+          setCurrentDialog(nextStep.id);
+          setDialogProgress(0);
+          setDialogOutput("");
+          setIsDialogComplete(false);
+          setScanSteps(prev => {
+            const updated = [...prev];
+            updated[currentIndex + 1].status = "running";
+            return updated;
+          });
+        } else {
+          // All steps completed
+          setCurrentDialog("complete");
+          setDialogProgress(100);
+          setDialogOutput("All steps completed successfully. Your device is now secure and compliant.");
+          setIsDialogComplete(true);
+        }
+      }, 2000);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [isDialogComplete, currentDialog, scanSteps]);
+
+  const startScanSequence = () => {
+    setShowWarning(false);
+    setIsScanning(true);
+    setCurrentDialog(scanSteps[0].id);
+    setDialogProgress(0);
+    setDialogOutput("");
+    setIsDialogComplete(false);
+    setScanSteps(prev => {
+      const updated = [...prev];
+      updated[0].status = "running";
+      return updated;
+    });
+  };
+
+  const handleDialogClose = () => {
+    if (currentDialog === "complete") {
+      setCurrentDialog(null);
+      setIsScanning(false);
+      
+      const mockResults: ScanResults = {
+        overallScore: 87,
+        grade: "Good",
+        components: [
+          { component: "CPU Performance", score: 92, status: "pass", details: "Intel i7-10750H - Optimal performance metrics" },
+          { component: "Memory Integrity", score: 88, status: "pass", details: "16GB DDR4 - All memory banks operational" },
+          { component: "Storage Health", score: 85, status: "pass", details: "512GB NVMe - 15% wear level, good retention" },
+          { component: "Battery Cycle", score: 76, status: "warning", details: "847 cycles completed, 74% capacity remaining" },
+          { component: "Display Quality", score: 94, status: "pass", details: "15.6\" FHD - No defects, optimal brightness" },
+          { component: "Thermal Management", score: 89, status: "pass", details: "Cooling system operational, no throttling" },
+          { component: "Data Sanitization", score: 100, status: "pass", details: "NIST SP 800-88 Purge method - Verified complete" }
+        ],
+        recommendation: "Refurbish",
+        certificateId: "RVL-MFECLNW2"
+      };
+      onComplete(mockResults);
+    }
+  };
 
   const handleStartScan = () => {
     setShowWarning(true);
   };
 
   const confirmScan = () => {
-    setShowWarning(false);
-    setIsScanning(true);
+    startScanSequence();
   };
 
   const handlePauseResume = () => {
@@ -349,6 +417,67 @@ const ScanExecution = ({ onBack, onComplete, deviceInfo }: ScanExecutionProps) =
                     Cancel
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Scan Process Dialogs */}
+        {currentDialog && currentDialog !== "complete" && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <Card className="max-w-lg w-full shadow-glow border-0">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center text-xl">
+                  <div className="p-2 bg-primary/10 rounded-lg mr-3">
+                    <Shield className="h-6 w-6 text-primary" />
+                  </div>
+                  {scanSteps.find(step => step.id === currentDialog)?.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <p className="text-muted-foreground leading-relaxed">
+                    {dialogMessages[currentDialog as keyof typeof dialogMessages]?.processing}
+                  </p>
+                  
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm font-medium">
+                      <span>Progress</span>
+                      <span>{Math.round(dialogProgress)}%</span>
+                    </div>
+                    <Progress value={dialogProgress} className="h-4 shadow-sm" />
+                  </div>
+                  
+                  {isDialogComplete && dialogOutput && (
+                    <div className="p-4 bg-success/10 border border-success/20 rounded-lg">
+                      <p className="text-success font-medium">{dialogOutput}</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Completion Dialog */}
+        {currentDialog === "complete" && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <Card className="max-w-lg w-full shadow-glow border-0">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center text-success text-xl">
+                  <div className="p-2 bg-success/10 rounded-lg mr-3">
+                    <CheckCircle className="h-6 w-6" />
+                  </div>
+                  Process Complete
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="p-4 bg-success/10 border border-success/20 rounded-lg">
+                  <p className="text-success font-medium">{dialogOutput}</p>
+                </div>
+                <Button onClick={handleDialogClose} className="w-full hover-lift">
+                  Close
+                </Button>
               </CardContent>
             </Card>
           </div>
