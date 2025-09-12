@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -58,6 +58,7 @@ const ScanExecution = ({ onBack, onComplete, deviceInfo }: ScanExecutionProps) =
   const [dialogProgress, setDialogProgress] = useState(0);
   const [dialogOutput, setDialogOutput] = useState<string>("");
   const [isDialogComplete, setIsDialogComplete] = useState(false);
+  const stepIndexRef = useRef(0);
 
   const [scanSteps, setScanSteps] = useState<ScanStep[]>([
     {
@@ -150,7 +151,7 @@ const ScanExecution = ({ onBack, onComplete, deviceInfo }: ScanExecutionProps) =
   // Auto-advance to next dialog after completion
   useEffect(() => {
     if (isDialogComplete && currentDialog) {
-      const currentIndex = scanSteps.findIndex(step => step.id === currentDialog);
+      const currentIndex = stepIndexRef.current;
       setScanSteps(prev => {
         const updated = [...prev];
         updated[currentIndex].status = "completed";
@@ -161,6 +162,7 @@ const ScanExecution = ({ onBack, onComplete, deviceInfo }: ScanExecutionProps) =
       const timeout = setTimeout(() => {
         if (currentIndex < scanSteps.length - 1) {
           // Move to next step
+          stepIndexRef.current = currentIndex + 1;
           const nextStep = scanSteps[currentIndex + 1];
           setCurrentDialog(nextStep.id);
           setDialogProgress(0);
@@ -182,17 +184,22 @@ const ScanExecution = ({ onBack, onComplete, deviceInfo }: ScanExecutionProps) =
 
       return () => clearTimeout(timeout);
     }
-  }, [isDialogComplete, currentDialog, scanSteps]);
+  }, [isDialogComplete, currentDialog]);
 
   const startScanSequence = () => {
     setShowWarning(false);
     setIsScanning(true);
+    stepIndexRef.current = 0;
     setCurrentDialog(scanSteps[0].id);
     setDialogProgress(0);
     setDialogOutput("");
     setIsDialogComplete(false);
     setScanSteps(prev => {
-      const updated = [...prev];
+      const updated = prev.map(step => ({ 
+        ...step, 
+        status: "pending" as "pending" | "running" | "completed" | "error", 
+        progress: 0 
+      }));
       updated[0].status = "running";
       return updated;
     });
